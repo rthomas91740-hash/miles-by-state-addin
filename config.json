@@ -1,0 +1,15 @@
+{
+  "name": "Miles by State",
+  "supportEmail": "randy@fleetwolf.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "url": "https://rthomas91740-hash.github.io/miles-by-state-addin/index.html",
+      "path": "ActivityLink/",
+      "menuName": {
+        "en": "Miles by State"
+      }
+    }
+  ],
+  "isSigned": false
+}
