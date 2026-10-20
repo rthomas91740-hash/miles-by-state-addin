@@ -72,6 +72,12 @@
 #mbs li .bar2 b{display:block;height:100%;background:var(--b3);border-radius:3px}
 #mbs li .pc{font-size:12px;color:var(--muted);font-weight:400}
 #mbs .empty{color:var(--muted);padding:10px 6px 14px}
+#mbs .sig{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;border-top:1px solid var(--line);padding-top:14px;font-size:13px;color:var(--muted)}
+#mbs .sig .who{font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;color:var(--fg)}
+#mbs .sig .who small{display:block;font-family:var(--font-body);font-weight:400;font-size:12px;letter-spacing:0;text-transform:none;color:var(--muted)}
+#mbs .sig .contact{display:flex;flex-wrap:wrap;gap:4px 18px}
+#mbs .sig a{color:var(--btn);text-decoration:none;font-weight:600}
+#mbs .sig a:hover{text-decoration:underline}
 #mbs footer{font-size:12px;color:var(--muted);max-width:80ch}
 </style>
 <div class="wrap">
@@ -109,6 +115,14 @@
     </aside>
   </div>
   <footer id="foot">Miles are driven inside each state, taken from MyGeotab fuel tax (IFTA) jurisdiction records. For tax filing, use the official Fuel Tax Report.</footer>
+  <div class="sig">
+    <div class="who">Designed by Randy &middot; Fleet Wolf<small>Geotab support and custom add-ins</small></div>
+    <div class="contact">
+      <a href="mailto:randy@fleetwolf.com">randy@fleetwolf.com</a>
+      <a href="tel:6263849013">626-384-9013</a>
+      <a href="https://www.fleetwolf.com" target="_blank" rel="noopener">www.fleetwolf.com</a>
+    </div>
+  </div>
 </div>
 </div>
 <script>
