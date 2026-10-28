@@ -25,6 +25,8 @@
 #mbs .bar label{display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
 #mbs .bar select, #mbs .bar input{font:inherit;font-size:14px;letter-spacing:0;text-transform:none;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-height:34px}
 #mbs .bar button{font:inherit;font-weight:600;font-size:14px;min-height:34px;padding:6px 18px;border-radius:6px;border:0;background:var(--btn);color:#fff;cursor:pointer}
+#mbs .bar select#vehicle{max-width:240px}
+#mbs .bar select:disabled{opacity:.55}
 #mbs .bar button:disabled{opacity:.55;cursor:default}
 #mbs .bar .status{margin-left:auto;font-size:12.5px;color:var(--muted);min-width:0}
 #mbs .bar .status.err{color:var(--err)}
@@ -93,6 +95,9 @@
     </label>
     <label>From <input type="date" id="from"></label>
     <label>To <input type="date" id="to"></label>
+    <label>Vehicle
+      <select id="vehicle" disabled><option value="">All vehicles</option></select>
+    </label>
     <button id="run" type="button">Update map</button>
     <div class="status" id="status" role="status"></div>
   </div>
@@ -137,11 +142,13 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
 
   var svg = document.getElementById("map"), tip = document.getElementById("tip"), card = document.getElementById("mapcard");
   var elPreset = document.getElementById("preset"), elFrom = document.getElementById("from"), elTo = document.getElementById("to");
-  var elRun = document.getElementById("run"), elStatus = document.getElementById("status");
+  var elRun = document.getElementById("run"), elStatus = document.getElementById("status"), elVeh = document.getElementById("vehicle");
   var shapes = {}, g1 = document.createElementNS(ns, "g"), hiLayer = document.createElementNS(ns, "g"), g2 = document.createElementNS(ns, "g");
   svg.appendChild(g1); svg.appendChild(hiLayer); svg.appendChild(g2);
 
   var api = null, miles = {}, total = 0, loading = false, runId = 0;
+  /* per-vehicle results kept in memory so the vehicle filter needs no reload */
+  var perDev = {}, otherDev = {}, devName = {}, periodLabel = "";
 
   function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -268,9 +275,10 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
 
   function load(from, to, id) {
     var fromIso = from.toISOString(), toIso = to.toISOString(), fromMs = from.getTime(), toMs = to.getTime();
-    return call("Get", { typeName: "Device", resultsLimit: 5000, propertySelector: { fields: ["id"], isIncluded: true } }).then(function (devs) {
+    return call("Get", { typeName: "Device", resultsLimit: 5000, propertySelector: { fields: ["id", "name"], isIncluded: true } }).then(function (devs) {
       var ids = devs.map(function (d) { return d.id; });
-      var out = {}, other = 0, done = 0, BATCH = 8;
+      var names2 = {}; devs.forEach(function (d) { names2[d.id] = d.name || d.id; });
+      var perD = {}, otherD = {}, done = 0, BATCH = 8;
       setStatus("Reading 0 of " + ids.length + " vehicles…");
       var chain = Promise.resolve();
       for (var i = 0; i < ids.length; i += BATCH) {
@@ -282,7 +290,8 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
                 propertySelector: { fields: ["jurisdiction", "enterTime", "exitTime", "enterOdometer", "exitOdometer"], isIncluded: true } }];
             });
             return multiCall(calls).then(function (res) {
-              res.forEach(function (rows) {
+              res.forEach(function (rows, idx) {
+                var did = chunk[idx];
                 (rows || []).forEach(function (r) {
                   if (!r.jurisdiction || r.enterOdometer == null || r.exitOdometer == null) return;
                   var s = Date.parse(r.enterTime), e = Date.parse(r.exitTime), km = r.exitOdometer - r.enterOdometer;
@@ -293,7 +302,9 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
                     km = inside > 0 ? km * inside / (e - s) : 0;
                   }
                   var mi = km / KM_PER_MI;
-                  if (valid[r.jurisdiction]) out[r.jurisdiction] = (out[r.jurisdiction] || 0) + mi; else other += mi;
+                  var pd = perD[did] || (perD[did] = {});
+                  if (valid[r.jurisdiction]) pd[r.jurisdiction] = (pd[r.jurisdiction] || 0) + mi;
+                  else otherD[did] = (otherD[did] || 0) + mi;
                 });
               });
               done += chunk.length;
@@ -302,9 +313,42 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
           });
         })(ids.slice(i, i + BATCH));
       }
-      return chain.then(function () { return { miles: out, other: other }; });
+      return chain.then(function () { return { perDev: perD, otherDev: otherD, names: names2 }; });
     });
   }
+
+  /* ---------- vehicle filter ---------- */
+  function devMapMiles(did) {
+    var t = 0, pd = perDev[did] || {};
+    Object.keys(pd).forEach(function (k) { t += pd[k]; });
+    return t;
+  }
+  function devTotal(did) { return devMapMiles(did) + (otherDev[did] || 0); }
+  function fillVehicles() {
+    var prev = elVeh.value;
+    var ids = Object.keys(devName).filter(function (d) { return devTotal(d) > 0.5; });
+    ids.sort(function (a, b) { return String(devName[a]).localeCompare(String(devName[b]), undefined, { numeric: true }); });
+    elVeh.innerHTML = '<option value="">All vehicles</option>';
+    ids.forEach(function (d) {
+      var o = document.createElement("option");
+      o.value = d; o.textContent = devName[d] + " (" + fmt(devMapMiles(d)) + " mi)";
+      elVeh.appendChild(o);
+    });
+    elVeh.value = ids.indexOf(prev) > -1 ? prev : "";
+    elVeh.disabled = false;
+  }
+  function applyFilter() {
+    var sel = elVeh.value, m = {}, other = 0;
+    Object.keys(perDev).forEach(function (d) {
+      if (sel && d !== sel) return;
+      var pd = perDev[d];
+      Object.keys(pd).forEach(function (k) { m[k] = (m[k] || 0) + pd[k]; });
+      other += otherDev[d] || 0;
+    });
+    miles = m; render(other);
+    document.getElementById("eyebrow").textContent = periodLabel + (sel ? " · " + devName[sel] : "");
+  }
+  elVeh.addEventListener("change", applyFilter);
 
   function run() {
     if (loading && !api) return;
@@ -312,24 +356,33 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
     if (!a || !b) { setStatus("Pick a start and end date.", true); return; }
     var from = fromYmd(a, false), to = fromYmd(b, true);
     if (from > to) { setStatus("The start date is after the end date.", true); return; }
-    document.getElementById("eyebrow").textContent = from.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) +
+    periodLabel = from.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) +
       " – " + to.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    document.getElementById("eyebrow").textContent = periodLabel;
     if (!api) { showSample(); return; }
-    var id = ++runId; loading = true; elRun.disabled = true;
+    var id = ++runId; loading = true; elRun.disabled = true; elVeh.disabled = true;
     load(from, to, id).then(function (r) {
       if (id !== runId) return;
-      miles = r.miles; render(r.other);
+      perDev = r.perDev; otherDev = r.otherDev; devName = r.names;
+      fillVehicles(); applyFilter();
       setStatus("Updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
     }).catch(function (err) {
       if (id !== runId) return;
       setStatus("Could not load mileage: " + (err && err.message ? err.message : err), true);
-    }).then(function () { if (id === runId) { loading = false; elRun.disabled = false; } });
+    }).then(function () {
+      if (id === runId) { loading = false; elRun.disabled = false; elVeh.disabled = !Object.keys(devName).length; }
+    });
   }
 
   /* Preview outside MyGeotab only: example figures, clearly labeled. */
   function showSample() {
-    miles = { TX: 5200, CA: 4100, AZ: 2300, NM: 1450, OK: 820, CO: 640, NV: 510, UT: 260, KS: 140, AR: 60 };
-    render(0);
+    perDev = {
+      s1: { TX: 3000, NM: 900, AZ: 1300, OK: 500, CO: 300 },
+      s2: { TX: 2200, CA: 4100, NV: 510, UT: 260, AZ: 1000 },
+      s3: { NM: 550, OK: 320, CO: 340, KS: 140, AR: 60 }
+    };
+    otherDev = {}; devName = { s1: "Truck 101", s2: "Truck 102", s3: "Van 201" };
+    fillVehicles(); applyFilter();
     setStatus("Sample figures. Open this page inside MyGeotab to see live mileage.");
   }
 
