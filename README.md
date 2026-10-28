@@ -1,6 +1,6 @@
 # Miles by State
 
-A MyGeotab add-in that shades a US map by the miles each state accounted for, using fuel tax (IFTA) jurisdiction records from the database you are logged into. Pick a period (last quarter, this quarter, last month, last 30 days, or custom dates) and the map, ranked list and total update. Use the Vehicle dropdown to show a single vehicle, or leave it on "All vehicles" for the whole fleet. Changing the vehicle updates instantly without reloading.
+A MyGeotab add-in that shades a US map by the miles each state accounted for, using fuel tax (IFTA) jurisdiction records from the database you are logged into. Pick a period (last quarter, this quarter, last month, last 30 days, or custom dates) and the map, ranked list and total update. Use the Vehicles dropdown to tick one or several vehicles (there is a search box for large fleets), or leave it on "All vehicles" for the whole fleet. Changing the selection updates instantly without reloading.
 
 Miles are totals inside each state. For tax filing, use Geotab's official Fuel Tax Report.
 

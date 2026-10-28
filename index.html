@@ -25,8 +25,23 @@
 #mbs .bar label{display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
 #mbs .bar select, #mbs .bar input{font:inherit;font-size:14px;letter-spacing:0;text-transform:none;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-height:34px}
 #mbs .bar button{font:inherit;font-weight:600;font-size:14px;min-height:34px;padding:6px 18px;border-radius:6px;border:0;background:var(--btn);color:#fff;cursor:pointer}
-#mbs .bar select#vehicle{max-width:240px}
-#mbs .bar select:disabled{opacity:.55}
+#mbs .bar .vsel{position:relative;display:flex;flex-direction:column;gap:3px}
+#mbs .bar .vsel>span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+#mbs .bar button.vbtn{background:var(--surface);color:var(--fg);border:1px solid var(--line);font-weight:400;text-align:left;min-width:170px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 28px 6px 8px;position:relative}
+#mbs .bar button.vbtn::after{content:"";position:absolute;right:11px;top:50%;width:6px;height:6px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-70%) rotate(45deg)}
+#mbs .vpanel{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;width:290px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(19,32,46,.18);padding:8px}
+#mbs .vpanel[hidden]{display:none}
+#mbs .bar .vpanel input[type=search]{width:100%}
+#mbs .vacts{display:flex;justify-content:space-between;padding:6px 2px 4px}
+#mbs .bar button.vlink{background:none;color:var(--btn);border:0;min-height:0;padding:2px 0;font-size:12.5px;font-weight:600}
+#mbs .bar button.vlink:hover{text-decoration:underline}
+#mbs .vlist{max-height:260px;overflow:auto;border-top:1px solid var(--line)}
+#mbs .bar .vpanel label.vopt{flex-direction:row;align-items:center;gap:8px;padding:6px 4px;font-size:13.5px;letter-spacing:0;text-transform:none;color:var(--fg);font-weight:400;cursor:pointer;border-radius:4px}
+#mbs .bar .vpanel label.vopt:hover{background:var(--none)}
+#mbs .bar .vpanel label.vopt input{min-height:0;width:16px;height:16px;padding:0;margin:0;flex:none}
+#mbs .vopt .vn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mbs .vopt .vm{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12.5px}
+#mbs .vnone{padding:8px 4px;color:var(--muted);font-size:13px}
 #mbs .bar button:disabled{opacity:.55;cursor:default}
 #mbs .bar .status{margin-left:auto;font-size:12.5px;color:var(--muted);min-width:0}
 #mbs .bar .status.err{color:var(--err)}
@@ -95,9 +110,18 @@
     </label>
     <label>From <input type="date" id="from"></label>
     <label>To <input type="date" id="to"></label>
-    <label>Vehicle
-      <select id="vehicle" disabled><option value="">All vehicles</option></select>
-    </label>
+    <div class="vsel" id="vsel">
+      <span>Vehicles</span>
+      <button type="button" class="vbtn" id="vbtn" aria-haspopup="true" aria-expanded="false" disabled>All vehicles</button>
+      <div class="vpanel" id="vpanel" hidden>
+        <input type="search" id="vsearch" placeholder="Search vehicles" aria-label="Search vehicles">
+        <div class="vacts">
+          <button type="button" class="vlink" id="vshown">Select shown</button>
+          <button type="button" class="vlink" id="vclear">Clear (all vehicles)</button>
+        </div>
+        <div class="vlist" id="vlist"></div>
+      </div>
+    </div>
     <button id="run" type="button">Update map</button>
     <div class="status" id="status" role="status"></div>
   </div>
@@ -142,7 +166,8 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
 
   var svg = document.getElementById("map"), tip = document.getElementById("tip"), card = document.getElementById("mapcard");
   var elPreset = document.getElementById("preset"), elFrom = document.getElementById("from"), elTo = document.getElementById("to");
-  var elRun = document.getElementById("run"), elStatus = document.getElementById("status"), elVeh = document.getElementById("vehicle");
+  var elRun = document.getElementById("run"), elStatus = document.getElementById("status");
+  var elVBtn = document.getElementById("vbtn"), elVPanel = document.getElementById("vpanel"), elVList = document.getElementById("vlist"), elVSearch = document.getElementById("vsearch");
   var shapes = {}, g1 = document.createElementNS(ns, "g"), hiLayer = document.createElementNS(ns, "g"), g2 = document.createElementNS(ns, "g");
   svg.appendChild(g1); svg.appendChild(hiLayer); svg.appendChild(g2);
 
@@ -317,38 +342,86 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
     });
   }
 
-  /* ---------- vehicle filter ---------- */
+  /* ---------- vehicle filter (pick one, several, or leave empty for all) ---------- */
+  var selDev = {}, vIds = [];
   function devMapMiles(did) {
     var t = 0, pd = perDev[did] || {};
     Object.keys(pd).forEach(function (k) { t += pd[k]; });
     return t;
   }
   function devTotal(did) { return devMapMiles(did) + (otherDev[did] || 0); }
-  function fillVehicles() {
-    var prev = elVeh.value;
-    var ids = Object.keys(devName).filter(function (d) { return devTotal(d) > 0.5; });
-    ids.sort(function (a, b) { return String(devName[a]).localeCompare(String(devName[b]), undefined, { numeric: true }); });
-    elVeh.innerHTML = '<option value="">All vehicles</option>';
-    ids.forEach(function (d) {
-      var o = document.createElement("option");
-      o.value = d; o.textContent = devName[d] + " (" + fmt(devMapMiles(d)) + " mi)";
-      elVeh.appendChild(o);
+  function selKeys() { return Object.keys(selDev); }
+  function vLabel() {
+    var k = selKeys();
+    if (!k.length) return "All vehicles";
+    if (k.length === 1) return String(devName[k[0]]);
+    return k.length + " vehicles";
+  }
+  function vMatches(d) {
+    var q = elVSearch.value.trim().toLowerCase();
+    return !q || String(devName[d]).toLowerCase().indexOf(q) > -1;
+  }
+  function renderVList() {
+    var shown = 0;
+    elVList.innerHTML = "";
+    vIds.forEach(function (d) {
+      if (!vMatches(d)) return;
+      shown++;
+      var lb = document.createElement("label"); lb.className = "vopt";
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.value = d; cb.checked = !!selDev[d];
+      var n = document.createElement("span"); n.className = "vn"; n.textContent = devName[d];
+      var m = document.createElement("span"); m.className = "vm"; m.textContent = fmt(devMapMiles(d)) + " mi";
+      lb.appendChild(cb); lb.appendChild(n); lb.appendChild(m); elVList.appendChild(lb);
     });
-    elVeh.value = ids.indexOf(prev) > -1 ? prev : "";
-    elVeh.disabled = false;
+    if (!shown) elVList.innerHTML = '<div class="vnone">No vehicles match.</div>';
+  }
+  function fillVehicles() {
+    vIds = Object.keys(devName).filter(function (d) { return devTotal(d) > 0.5; });
+    vIds.sort(function (a, b) { return String(devName[a]).localeCompare(String(devName[b]), undefined, { numeric: true }); });
+    Object.keys(selDev).forEach(function (d) { if (vIds.indexOf(d) < 0) delete selDev[d]; });
+    renderVList();
+    elVBtn.textContent = vLabel(); elVBtn.disabled = false;
   }
   function applyFilter() {
-    var sel = elVeh.value, m = {}, other = 0;
+    var sel = selKeys(), m = {}, other = 0;
     Object.keys(perDev).forEach(function (d) {
-      if (sel && d !== sel) return;
+      if (sel.length && !selDev[d]) return;
       var pd = perDev[d];
       Object.keys(pd).forEach(function (k) { m[k] = (m[k] || 0) + pd[k]; });
       other += otherDev[d] || 0;
     });
     miles = m; render(other);
-    document.getElementById("eyebrow").textContent = periodLabel + (sel ? " · " + devName[sel] : "");
+    var names = sel.map(function (d) { return devName[d]; });
+    var suffix = !sel.length ? "" : sel.length <= 2 ? names.join(", ") : sel.length + " vehicles";
+    document.getElementById("eyebrow").textContent = periodLabel + (suffix ? " · " + suffix : "");
+    elVBtn.textContent = vLabel(); elVBtn.title = names.join(", ");
   }
-  elVeh.addEventListener("change", applyFilter);
+  function vOpen(open) {
+    elVPanel.hidden = !open;
+    elVBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) elVSearch.focus();
+  }
+  elVBtn.addEventListener("click", function (e) { e.stopPropagation(); vOpen(elVPanel.hidden); });
+  elVList.addEventListener("change", function (e) {
+    var cb = e.target;
+    if (!cb || cb.type !== "checkbox") return;
+    if (cb.checked) selDev[cb.value] = true; else delete selDev[cb.value];
+    applyFilter();
+  });
+  elVSearch.addEventListener("input", renderVList);
+  document.getElementById("vshown").addEventListener("click", function () {
+    vIds.forEach(function (d) { if (vMatches(d)) selDev[d] = true; });
+    renderVList(); applyFilter();
+  });
+  document.getElementById("vclear").addEventListener("click", function () {
+    selDev = {}; renderVList(); applyFilter();
+  });
+  document.addEventListener("click", function (e) {
+    if (!elVPanel.hidden && !document.getElementById("vsel").contains(e.target)) vOpen(false);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !elVPanel.hidden) { vOpen(false); elVBtn.focus(); }
+  });
 
   function run() {
     if (loading && !api) return;
@@ -360,7 +433,7 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
       " – " + to.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     document.getElementById("eyebrow").textContent = periodLabel;
     if (!api) { showSample(); return; }
-    var id = ++runId; loading = true; elRun.disabled = true; elVeh.disabled = true;
+    var id = ++runId; loading = true; elRun.disabled = true; elVBtn.disabled = true; vOpen(false);
     load(from, to, id).then(function (r) {
       if (id !== runId) return;
       perDev = r.perDev; otherDev = r.otherDev; devName = r.names;
@@ -370,7 +443,7 @@ var STATES = [{"a":"AL","n":"Alabama","d":"M647.959,492.438L651.817,491.506L651.
       if (id !== runId) return;
       setStatus("Could not load mileage: " + (err && err.message ? err.message : err), true);
     }).then(function () {
-      if (id === runId) { loading = false; elRun.disabled = false; elVeh.disabled = !Object.keys(devName).length; }
+      if (id === runId) { loading = false; elRun.disabled = false; elVBtn.disabled = !Object.keys(devName).length; }
     });
   }
 
